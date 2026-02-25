@@ -3,11 +3,18 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { HomeScreenEventType } from "@/4-lib/general/campaign-events.ts";
 import type { PersonalGoalType } from "@/4-lib/general/constants.ts";
+import {
+	type CustomFarmSelections,
+	DEFAULT_CUSTOM_FARM_SELECTIONS,
+	type FarmStrategy,
+} from "@/4-lib/general/daily-raids/types.ts";
+
+export type { CustomFarmSelections, FarmStrategy };
 
 interface GoalPreferencesState {
 	dailyEnergy: number;
 	shardsEnergy: number;
-	farmStrategy: "leastEnergy" | "leastTime";
+	farmStrategy: FarmStrategy;
 	farmOrder: "goalPriority" | "totalMaterials";
 	goalsTableView: boolean;
 	goalColorMode: number;
@@ -20,9 +27,10 @@ interface GoalPreferencesState {
 	settingsVersion: number;
 	/** Active goal type filters (empty = show all). */
 	goalTypeFilter: PersonalGoalType[];
+	customFarmSelections: CustomFarmSelections;
 	setDailyEnergy: (energy: number) => void;
 	setShardsEnergy: (energy: number) => void;
-	setFarmStrategy: (strategy: "leastEnergy" | "leastTime") => void;
+	setFarmStrategy: (strategy: FarmStrategy) => void;
 	setFarmOrder: (order: "goalPriority" | "totalMaterials") => void;
 	setGoalsTableView: (tableView: boolean) => void;
 	setGoalColorMode: (mode: number) => void;
@@ -32,6 +40,7 @@ interface GoalPreferencesState {
 	setHseMinEnemyCount: (count: number) => void;
 	toggleGoalTypeFilter: (type: PersonalGoalType) => void;
 	clearGoalTypeFilter: () => void;
+	setCustomFarmSelections: (selections: CustomFarmSelections) => void;
 }
 
 export const useGoalPreferencesStore = create<GoalPreferencesState>()(
@@ -39,7 +48,7 @@ export const useGoalPreferencesStore = create<GoalPreferencesState>()(
 		(set, get) => ({
 			dailyEnergy: 288,
 			shardsEnergy: 0,
-			farmStrategy: "leastEnergy",
+			farmStrategy: "leastEnergy" as FarmStrategy,
 			farmOrder: "goalPriority",
 			goalsTableView: false,
 			goalColorMode: 0,
@@ -49,6 +58,7 @@ export const useGoalPreferencesStore = create<GoalPreferencesState>()(
 			hseMinEnemyCount: 5,
 			settingsVersion: 0,
 			goalTypeFilter: [],
+			customFarmSelections: DEFAULT_CUSTOM_FARM_SELECTIONS,
 			setDailyEnergy: (dailyEnergy) =>
 				set((s) => ({ dailyEnergy, settingsVersion: s.settingsVersion + 1 })),
 			setShardsEnergy: (shardsEnergy) =>
@@ -89,12 +99,28 @@ export const useGoalPreferencesStore = create<GoalPreferencesState>()(
 				set({ goalTypeFilter: next });
 			},
 			clearGoalTypeFilter: () => set({ goalTypeFilter: [] }),
+			setCustomFarmSelections: (customFarmSelections) =>
+				set((s) => ({
+					customFarmSelections,
+					settingsVersion: s.settingsVersion + 1,
+				})),
 		}),
 		{
 			name: "goal-preferences-storage",
 			partialize: (state) => {
 				const { goalsViewMode: _, ...rest } = state;
 				return rest;
+			},
+			merge: (persisted, current) => {
+				const merged = { ...current, ...(persisted as object) };
+				// Migrate legacy "leastTime" → "leastEnergy"
+				if (
+					(merged as GoalPreferencesState).farmStrategy ===
+					("leastTime" as string)
+				) {
+					(merged as GoalPreferencesState).farmStrategy = "leastEnergy";
+				}
+				return merged as GoalPreferencesState;
 			},
 		},
 	),
