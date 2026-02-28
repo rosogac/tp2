@@ -69,6 +69,19 @@ function consumeOrExpand(
 	upgradesRarity: Rarity[],
 	baseUpgradesTotal: Record<string, number>,
 ): void {
+	const mat = PROCESSED_MATERIALS[materialId];
+
+	// For base materials, check rarity filter BEFORE consuming inventory.
+	// Non-matching base materials belong to a different goal split.
+	if (
+		upgradesRarity.length > 0 &&
+		mat &&
+		!mat.crafted &&
+		!upgradesRarity.includes(mat.rarity)
+	) {
+		return;
+	}
+
 	// 1. Try to consume from inventory
 	const owned = inventoryCopy[materialId] ?? 0;
 	if (owned >= count) {
@@ -82,7 +95,6 @@ function consumeOrExpand(
 	}
 
 	// 2. If crafted, walk the recipe tree
-	const mat = PROCESSED_MATERIALS[materialId];
 	if (mat?.crafted && mat.recipe) {
 		for (const ingredient of mat.recipe) {
 			consumeOrExpand(
@@ -96,14 +108,7 @@ function consumeOrExpand(
 		return;
 	}
 
-	// 3. Base material — add to farming needs (apply rarity filter)
-	if (
-		upgradesRarity.length > 0 &&
-		mat &&
-		!upgradesRarity.includes(mat.rarity)
-	) {
-		return;
-	}
+	// 3. Base material — add to farming needs
 	baseUpgradesTotal[materialId] =
 		(baseUpgradesTotal[materialId] ?? 0) + remaining;
 }

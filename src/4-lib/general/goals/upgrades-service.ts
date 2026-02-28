@@ -67,18 +67,11 @@ export function estimateUpgradeDays(
 	// Get all upgrade locations indexed by material
 	const allLocations = getAllUpgradeLocations();
 
-	// For each material, compute energy needed using the cheapest location
+	// Per-material estimation: each material has its own daily raid cap,
+	// so we compute days per material and take the bottleneck (max).
 	let totalEnergy = 0;
 	let totalRaids = 0;
-	let totalDailyRaids = 0; // sum of dailyBattleCount across unique nodes
-
-	// Track unique nodes we need to farm (for daily raid limit calculation)
-	const seenBattleIds = new Set<string>();
-	const nodeRaids: Array<{
-		dailyBattleCount: number;
-		energyCost: number;
-		raidsNeeded: number;
-	}> = [];
+	let maxDaysFromRaidLimits = 0;
 
 	for (const [materialId, count] of Object.entries(baseUpgrades)) {
 		const rawLocations = allLocations[materialId];
@@ -98,22 +91,33 @@ export function estimateUpgradeDays(
 			continue;
 		}
 
-		// Use the best (cheapest energy-per-item) location
+		// Use the best (cheapest energy-per-item) location for energy calculation
 		const best = locations[0];
 		const raidsNeeded = Math.ceil(count / best.dropRate);
 		const energy = raidsNeeded * best.energyCost;
 
 		totalEnergy += energy;
 		totalRaids += raidsNeeded;
-		nodeRaids.push({
-			dailyBattleCount: best.dailyBattleCount,
-			energyCost: best.energyCost,
-			raidsNeeded,
-		});
-		// Only count daily battle cap once per unique node
-		if (!seenBattleIds.has(best.battleId)) {
-			seenBattleIds.add(best.battleId);
-			totalDailyRaids += best.dailyBattleCount;
+
+		// Sum daily raid capacity across locations with the same efficiency tier.
+		// Locations are sorted by energy-per-item (cheapest first). We only
+		// count nodes matching the best ratio — e.g. two elite nodes for the
+		// same legendary material both count, but cheaper normal nodes don't.
+		const bestCostPerItem = best.energyCost / best.dropRate;
+		const seenBattleIds = new Set<string>();
+		let materialDailyRaids = 0;
+		for (const loc of locations) {
+			if (loc.energyCost / loc.dropRate > bestCostPerItem * 1.01) break;
+			if (!seenBattleIds.has(loc.battleId)) {
+				seenBattleIds.add(loc.battleId);
+				materialDailyRaids += loc.dailyBattleCount;
+			}
+		}
+
+		// Days to farm this material, limited by its daily raid cap
+		if (materialDailyRaids > 0) {
+			const daysForMaterial = Math.ceil(raidsNeeded / materialDailyRaids);
+			maxDaysFromRaidLimits = Math.max(maxDaysFromRaidLimits, daysForMaterial);
 		}
 	}
 
@@ -121,24 +125,11 @@ export function estimateUpgradeDays(
 		return { daysTotal: 0, energyTotal: 0, raidsTotal: 0 };
 	}
 
-	// Calculate days: limited by either energy per day or daily raid limits per node
-	// Each node has a dailyBattleCount limit, and we're limited by total dailyEnergy
-	const energyLimitedRaidsPerDay =
-		totalDailyRaids > 0
-			? // Scale raids by energy constraint: if we need more energy than available,
-				// reduce proportionally
-				Math.min(totalDailyRaids, dailyEnergy / (totalEnergy / totalRaids))
-			: 0;
+	// Days limited by total energy budget
+	const daysFromEnergy = Math.ceil(totalEnergy / dailyEnergy);
 
-	if (energyLimitedRaidsPerDay <= 0) {
-		return {
-			daysTotal: Number.POSITIVE_INFINITY,
-			energyTotal: totalEnergy,
-			raidsTotal: totalRaids,
-		};
-	}
-
-	const daysTotal = Math.ceil(totalRaids / energyLimitedRaidsPerDay);
+	// The bottleneck is whichever takes longer
+	const daysTotal = Math.max(maxDaysFromRaidLimits, daysFromEnergy);
 
 	return { daysTotal, energyTotal: totalEnergy, raidsTotal: totalRaids };
 }

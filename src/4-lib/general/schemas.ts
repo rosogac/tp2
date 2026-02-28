@@ -130,6 +130,7 @@ export const RosterUnitSchema = z.object({
 	level: z.number(),
 	xp: z.number(),
 	upgradeCount: z.number(),
+	appliedUpgrades: z.array(z.string()).default([]),
 	equipment: z.array(RosterEquipmentSchema),
 });
 

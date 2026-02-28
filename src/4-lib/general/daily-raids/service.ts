@@ -135,9 +135,10 @@ function computeMaterialEstimate(
 	}
 
 	// Inner simulation: how many days/energy/raids to farm leftCount items.
-	// On the last partial day, round up to the full daily allocation so the
-	// outer day-by-day sim can use all available attempts instead of capping
-	// at a tight fractional budget.
+	// On the last partial day, only count the exact raids needed (rounded up
+	// to whole battles). This matches tacticusplanner's getUpgradeEstimate
+	// and ensures energyLeft doesn't inflate, preventing materials from
+	// hogging energy in the outer day-by-day simulation.
 	let energyTotal = 0;
 	let raidsTotal = 0;
 	let farmedItems = 0;
@@ -154,10 +155,12 @@ function computeMaterialEstimate(
 				farmedItems += dailyFarmedItems;
 				raidsTotal += loc.dailyBattleCount;
 			} else {
-				// Use full daily allocation so the outer sim can plan all daily attempts
-				farmedItems += dailyFarmedItems;
-				energyTotal += dailyEnergy;
-				raidsTotal += loc.dailyBattleCount;
+				// Partial day: only count the exact raids needed
+				const energyNeeded = leftToFarm * loc.energyPerItem;
+				const battlesNeeded = Math.ceil(energyNeeded / loc.energyCost);
+				farmedItems += leftToFarm;
+				energyTotal += battlesNeeded * loc.energyCost;
+				raidsTotal += battlesNeeded;
 				break;
 			}
 		}

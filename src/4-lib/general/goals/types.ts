@@ -138,6 +138,8 @@ export interface IGoalEstimate {
 	goalId: string;
 	daysTotal: number;
 	daysLeft: number;
+	/** Day number (from today) when this goal finishes, accounting for energy sharing with higher-priority goals. */
+	finishByDay: number;
 	xpDaysLeft?: number;
 	energyTotal: number;
 	oTokensTotal: number;

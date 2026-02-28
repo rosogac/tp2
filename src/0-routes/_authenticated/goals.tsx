@@ -70,7 +70,7 @@ import type { Campaign } from "@/4-lib/general/constants.ts";
 import { generateDailyRaidsPlan } from "@/4-lib/general/daily-raids/service.ts";
 import type { IDailyRaidsPlan } from "@/4-lib/general/daily-raids/types.ts";
 import {
-	calculateGoalEstimate,
+	calculateAllGoalEstimates,
 	type PlayerContext,
 } from "@/4-lib/general/goals/goals-service.ts";
 import type {
@@ -144,6 +144,10 @@ function buildTypedGoals(
 				parsed.rarity = rosterUnit.rarity;
 				parsed.level = rosterUnit.level;
 				parsed.xp = rosterUnit.xp;
+				// Sync applied upgrades so estimation skips already-equipped materials
+				if (rosterUnit.rank === (parsed.rankStart ?? 0)) {
+					parsed.appliedUpgrades = rosterUnit.appliedUpgrades;
+				}
 			}
 		}
 
@@ -308,6 +312,11 @@ function GoalsPage() {
 			shardsEnergy,
 			playerContext,
 			roster,
+			farmStrategy,
+			farmOrder,
+			customFarmSelections,
+			homeScreenEvent,
+			hseMinEnemyCount,
 			hasHydrated,
 			initialSyncDone,
 			settingsVersion,
@@ -318,24 +327,73 @@ function GoalsPage() {
 	useEffect(() => {
 		if (!goals || !hasHydrated || !initialSyncDone) {
 			setEstimatesResult(null);
+			setRaidsResult(null);
 			return;
 		}
 
 		const currentToken = estimatesDepsToken;
 		const typedGoals = buildTypedGoals(goals, roster);
-		const sorted = [...typedGoals].sort((a, b) => a.priority - b.priority);
-		const inventoryCopy = { ...(playerContext.inventory ?? {}) };
 
-		const results: IGoalEstimate[] = [];
-		for (const goal of sorted) {
-			const ctx: PlayerContext = {
-				...playerContext,
-				inventory: inventoryCopy,
-				mutateInventory: true,
-			};
-			const est = calculateGoalEstimate(goal, dailyEnergy, shardsEnergy, ctx);
-			results.push(est);
+		// 1. Run the daily raids simulation (always, not just in dailyRaids view).
+		//    This produces the day-by-day schedule from which we extract accurate
+		//    daysTotal/daysLeft for UpgradeRank goals.
+		const progress =
+			(playerContext.campaignProgress as Map<Campaign, number>) ?? new Map();
+		const inv = playerContext.inventory ?? {};
+		const attempts = parseBattleAttempts(campaignProgress);
+
+		const plan = generateDailyRaidsPlan(
+			typedGoals,
+			dailyEnergy,
+			progress,
+			inv,
+			farmStrategy,
+			farmOrder,
+			playerContext.campaignEvent ?? "none",
+			homeScreenEvent,
+			hseMinEnemyCount,
+			attempts,
+			customFarmSelections,
+		);
+		setRaidsResult({ plan, token: currentToken });
+
+		// 2. Extract daysTotal/daysLeft from the plan for each UpgradeRank goal.
+		//    daysTotal = number of days this goal has materials being farmed.
+		//    daysLeft  = firstFarmDay + daysTotal (absolute completion day).
+		const planDays = new Map<string, { daysTotal: number; daysLeft: number }>();
+		for (const goal of typedGoals) {
+			if (goal.type !== GoalType.UpgradeRank) continue;
+			const goalId = goal.goalId;
+			const firstFarmDay = plan.days.findIndex((day) =>
+				day.raids.some((raid) => raid.goalId === goalId),
+			);
+			const farmDayCount = plan.days.filter((day) =>
+				day.raids.some((raid) => raid.goalId === goalId),
+			).length;
+			planDays.set(goalId, {
+				daysTotal: farmDayCount,
+				daysLeft: firstFarmDay >= 0 ? firstFarmDay + farmDayCount : 0,
+			});
 		}
+
+		// 3. Compute estimates (energy, XP, badges, and non-UpgradeRank goals).
+		const results = calculateAllGoalEstimates(
+			typedGoals,
+			dailyEnergy,
+			shardsEnergy,
+			playerContext,
+		);
+
+		// 4. Override UpgradeRank estimates with simulation-derived values.
+		for (const est of results) {
+			const pd = planDays.get(est.goalId);
+			if (pd) {
+				est.daysTotal = pd.daysTotal;
+				est.daysLeft = pd.daysLeft;
+				est.finishByDay = pd.daysLeft;
+			}
+		}
+
 		const map = new Map<string, IGoalEstimate>();
 		for (const est of results) {
 			map.set(est.goalId, est);
@@ -377,79 +435,10 @@ function GoalsPage() {
 		plan: IDailyRaidsPlan;
 		token: object;
 	} | null>(null);
-	const [computingRaids, setComputingRaids] = useState(false);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: settingsVersion is an intentional cache-buster
-	const raidsDepsToken = useMemo(
-		() => ({}),
-		[
-			viewMode,
-			goals,
-			dailyEnergy,
-			playerContext,
-			farmStrategy,
-			farmOrder,
-			customFarmSelections,
-			roster,
-			homeScreenEvent,
-			hseMinEnemyCount,
-			hasHydrated,
-			initialSyncDone,
-			settingsVersion,
-		],
-	);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: deps tracked via raidsDepsToken
-	useEffect(() => {
-		if (
-			viewMode !== "dailyRaids" ||
-			!goals ||
-			!hasHydrated ||
-			!initialSyncDone
-		) {
-			setRaidsResult(null);
-			setComputingRaids(false);
-			return;
-		}
-
-		let cancelled = false;
-		setComputingRaids(true);
-		const currentToken = raidsDepsToken;
-
-		const typedGoals = buildTypedGoals(goals, roster);
-
-		const progress =
-			(playerContext.campaignProgress as Map<Campaign, number>) ?? new Map();
-		const inv = playerContext.inventory ?? {};
-
-		const attempts = parseBattleAttempts(campaignProgress);
-
-		const plan = generateDailyRaidsPlan(
-			typedGoals,
-			dailyEnergy,
-			progress,
-			inv,
-			farmStrategy,
-			farmOrder,
-			playerContext.campaignEvent ?? "none",
-			homeScreenEvent,
-			hseMinEnemyCount,
-			attempts,
-			customFarmSelections,
-		);
-		if (!cancelled) {
-			setRaidsResult({ plan, token: currentToken });
-			setComputingRaids(false);
-		}
-
-		return () => {
-			cancelled = true;
-		};
-	}, [raidsDepsToken]);
-
-	// Only use the plan if it was computed with the current deps
+	// The daily raids plan is computed in the estimates effect above.
 	const raidsPlan =
-		raidsResult?.token === raidsDepsToken ? raidsResult.plan : null;
+		raidsResult?.token === estimatesDepsToken ? raidsResult.plan : null;
 
 	// Compute today's activity from ALL campaign nodes (plan + non-plan farming)
 	const todayActivity = useMemo(
@@ -950,7 +939,7 @@ function GoalsPage() {
 					<TabsContent value="dailyRaids">
 						<DailyRaidsPlan
 							plan={raidsPlan}
-							computing={computingRaids}
+							computing={false}
 							dailyEnergy={dailyEnergy}
 							todayActivity={todayActivity}
 						/>

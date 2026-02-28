@@ -1,6 +1,8 @@
 import type { Rarity } from "#common/rarity.ts";
+import { CHARACTER_RANK_UP_MATERIALS } from "@/5-assets/character-rank-up-materials/index.ts";
 import type { TacticusUnit } from "~/tacticus/types.ts";
 import { Rank, RarityStars } from "./constants.ts";
+import { rankToString } from "./rank-data.ts";
 
 /**
  * Convert Tacticus API progressionIndex → [Rarity, RarityStars].
@@ -63,6 +65,8 @@ export interface RosterUnit {
 	xp: number;
 	/** Number of applied rank upgrades (0–6) */
 	upgradeCount: number;
+	/** Material IDs of upgrades already applied at the current rank */
+	appliedUpgrades: string[];
 	equipment: RosterEquipment[];
 }
 
@@ -73,8 +77,25 @@ export function buildRosterMap(units: TacticusUnit[]): Map<string, RosterUnit> {
 	const map = new Map<string, RosterUnit>();
 	for (const u of units) {
 		const { rarity, stars } = convertProgressionIndex(u.progressionIndex);
+		const rank = convertApiRank(u.rank);
+
+		// Derive applied upgrade material IDs from slot indices
+		const rankStr = rankToString[rank];
+		const charData =
+			CHARACTER_RANK_UP_MATERIALS[
+				u.id as keyof typeof CHARACTER_RANK_UP_MATERIALS
+			];
+		const rankMaterials = rankStr && charData ? (charData[rankStr] ?? []) : [];
+		// u.upgrades is an array of slot indices (e.g. [0, 2, 4] = 3 upgrades applied)
+		const appliedUpgrades: string[] = [];
+		for (const slotIndex of u.upgrades) {
+			if (rankMaterials[slotIndex]) {
+				appliedUpgrades.push(rankMaterials[slotIndex]);
+			}
+		}
+
 		map.set(u.id, {
-			rank: convertApiRank(u.rank),
+			rank,
 			rarity,
 			stars,
 			abilities: [u.abilities[0].level, u.abilities[1].level],
@@ -82,7 +103,8 @@ export function buildRosterMap(units: TacticusUnit[]): Map<string, RosterUnit> {
 			mythicShards: u.mythicShards,
 			level: u.xpLevel,
 			xp: u.xp,
-			upgradeCount: u.upgrades.filter((v) => v !== 0).length,
+			upgradeCount: u.upgrades.length,
+			appliedUpgrades,
 			equipment: u.items.map((item) => ({
 				id: item.id,
 				level: item.level,

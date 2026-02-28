@@ -50,6 +50,7 @@ export function calculateGoalEstimate(
 		goalId: goal.goalId,
 		daysTotal: 0,
 		daysLeft: 0,
+		finishByDay: 0,
 		energyTotal: 0,
 		oTokensTotal: 0,
 		xpBooksTotal: 0,
@@ -106,6 +107,7 @@ function estimateRankGoal(
 		...base,
 		daysTotal,
 		daysLeft: daysTotal,
+		finishByDay: daysTotal,
 		xpDaysLeft: xpDaysLeft > 0 ? xpDaysLeft : undefined,
 		energyTotal: upgradeEst.energyTotal,
 		xpBooksTotal,
@@ -187,6 +189,7 @@ function estimateAscendGoal(
 		...base,
 		daysTotal: combinedDays,
 		daysLeft: combinedDays,
+		finishByDay: combinedDays,
 		energyTotal: shardEst.energyTotal,
 		oTokensTotal,
 		hasLocations: shardEst.hasLocations,
@@ -215,6 +218,7 @@ function estimateUnlockGoal(
 		...base,
 		daysTotal: shardEst.daysTotal,
 		daysLeft: shardEst.daysTotal,
+		finishByDay: shardEst.daysTotal,
 		energyTotal: shardEst.energyTotal,
 		oTokensTotal: shardEst.onslaughtTokensTotal,
 	};
@@ -248,6 +252,7 @@ function estimateMowGoal(
 		...base,
 		daysTotal,
 		daysLeft: daysTotal,
+		finishByDay: daysTotal,
 		mowEstimate: materials,
 	};
 }
@@ -301,6 +306,7 @@ function estimateAbilitiesGoal(
 		...base,
 		daysTotal,
 		daysLeft: daysTotal,
+		finishByDay: daysTotal,
 		xpDaysLeft: xpDaysLeft > 0 ? xpDaysLeft : undefined,
 		xpBooksTotal: maxXpBooks,
 		xpMythicBooksTotal: maxMythicBooks > 0 ? maxMythicBooks : undefined,
@@ -323,6 +329,13 @@ export function calculateAllGoalEstimates(
 	const sorted = [...goals].sort((a, b) => a.priority - b.priority);
 	const inventoryCopy = { ...(playerContext?.inventory ?? {}) };
 	const results: IGoalEstimate[] = [];
+
+	// Each goal gets the full dailyEnergy for its standalone estimate.
+	// The daily raids simulation handles actual energy allocation day-by-day.
+	// finishByDay tracks the running max — the project isn't done until
+	// the slowest goal finishes.
+	let cumulativeFinishDay = 0;
+
 	for (const goal of sorted) {
 		const ctx: PlayerContext = {
 			...playerContext,
@@ -330,6 +343,10 @@ export function calculateAllGoalEstimates(
 			mutateInventory: true,
 		};
 		const est = calculateGoalEstimate(goal, dailyEnergy, shardsEnergy, ctx);
+
+		cumulativeFinishDay = Math.max(cumulativeFinishDay, est.daysTotal);
+		est.finishByDay = cumulativeFinishDay;
+
 		results.push(est);
 	}
 	return results;

@@ -17,7 +17,14 @@ import { goalTypeLabels } from "@/4-lib/general/goals/types.ts";
 import { GoalDataSchema } from "@/4-lib/general/schemas.ts";
 import { cn } from "@/4-lib/utils.ts";
 
-type SortKey = "priority" | "unitName" | "type" | "days" | "energy" | "date";
+type SortKey =
+	| "priority"
+	| "unitName"
+	| "type"
+	| "days"
+	| "energy"
+	| "finish"
+	| "date";
 type SortDir = "asc" | "desc";
 
 interface GoalsTableRow {
@@ -128,6 +135,11 @@ export function GoalsTable({
 						((a.estimate?.energyTotal ?? 0) - (b.estimate?.energyTotal ?? 0)) *
 						dir
 					);
+				case "finish": {
+					const aFinish = a.estimate?.finishByDay ?? 0;
+					const bFinish = b.estimate?.finishByDay ?? 0;
+					return (aFinish - bFinish) * dir;
+				}
 				case "date": {
 					const aDate = a.estimate?.daysTotal ?? 0;
 					const bDate = b.estimate?.daysTotal ?? 0;
@@ -169,15 +181,15 @@ export function GoalsTable({
 							onSort={handleSort}
 						/>
 						<SortHeader
-							label="Energy"
-							column="energy"
-							className="w-24"
+							label="Finish"
+							column="finish"
+							className="w-28"
 							onSort={handleSort}
 						/>
 						<SortHeader
-							label="Est. Date"
-							column="date"
-							className="w-28"
+							label="Energy"
+							column="energy"
+							className="w-24"
 							onSort={handleSort}
 						/>
 						<th className="w-12 px-3 py-2 text-left text-xs font-medium text-muted-foreground">
@@ -192,8 +204,9 @@ export function GoalsTable({
 					{sorted.map((row) => {
 						const est = row.estimate;
 						const days = est?.daysTotal ?? 0;
-						const completionDate =
-							days > 0 ? formatDate(getCompletionDate(days)) : "—";
+						const finishDay = est?.finishByDay ?? 0;
+						const finishDate =
+							finishDay > 0 ? formatDate(getCompletionDate(finishDay)) : "—";
 
 						return (
 							<tr
@@ -230,6 +243,9 @@ export function GoalsTable({
 								<td className="px-3 py-2 tabular-nums">
 									{days > 0 ? `~${Math.round(days)}d` : "Ready"}
 								</td>
+								<td className="px-3 py-2 text-muted-foreground">
+									{finishDate}
+								</td>
 								<td className="px-3 py-2 tabular-nums">
 									{est?.energyTotal ? (
 										<span className="flex items-center gap-1">
@@ -239,9 +255,6 @@ export function GoalsTable({
 									) : (
 										"—"
 									)}
-								</td>
-								<td className="px-3 py-2 text-muted-foreground">
-									{completionDate}
 								</td>
 								<td className="px-3 py-2">
 									<button
