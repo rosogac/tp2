@@ -360,15 +360,23 @@ function GoalsPage() {
 		// 2. Extract daysTotal/daysLeft from the plan for each UpgradeRank goal.
 		//    daysTotal = number of days this goal has materials being farmed.
 		//    daysLeft  = firstFarmDay + daysTotal (absolute completion day).
+		//    Only count days with actual raids (raidsCount > 0), not zero-attempt
+		//    placeholders or finished-material injections.
+		const hasRealRaids = (day: (typeof plan.days)[number], goalId: string) =>
+			day.raids.some(
+				(raid) =>
+					raid.goalId === goalId &&
+					raid.raidLocations.some((loc) => loc.raidsCount > 0),
+			);
 		const planDays = new Map<string, { daysTotal: number; daysLeft: number }>();
 		for (const goal of typedGoals) {
 			if (goal.type !== GoalType.UpgradeRank) continue;
 			const goalId = goal.goalId;
 			const firstFarmDay = plan.days.findIndex((day) =>
-				day.raids.some((raid) => raid.goalId === goalId),
+				hasRealRaids(day, goalId),
 			);
 			const farmDayCount = plan.days.filter((day) =>
-				day.raids.some((raid) => raid.goalId === goalId),
+				hasRealRaids(day, goalId),
 			).length;
 			planDays.set(goalId, {
 				daysTotal: farmDayCount,
@@ -384,7 +392,8 @@ function GoalsPage() {
 			playerContext,
 		);
 
-		// 4. Override UpgradeRank estimates with simulation-derived values.
+		// 4. Override UpgradeRank estimates with simulation-derived values,
+		//    then recompute cumulative finishByDay so it stays monotonic.
 		for (const est of results) {
 			const pd = planDays.get(est.goalId);
 			if (pd) {
@@ -392,6 +401,11 @@ function GoalsPage() {
 				est.daysLeft = pd.daysLeft;
 				est.finishByDay = pd.daysLeft;
 			}
+		}
+		let cumulativeFinishDay = 0;
+		for (const est of results) {
+			cumulativeFinishDay = Math.max(cumulativeFinishDay, est.finishByDay);
+			est.finishByDay = cumulativeFinishDay;
 		}
 
 		const map = new Map<string, IGoalEstimate>();

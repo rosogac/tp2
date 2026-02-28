@@ -17,14 +17,7 @@ import { goalTypeLabels } from "@/4-lib/general/goals/types.ts";
 import { GoalDataSchema } from "@/4-lib/general/schemas.ts";
 import { cn } from "@/4-lib/utils.ts";
 
-type SortKey =
-	| "priority"
-	| "unitName"
-	| "type"
-	| "days"
-	| "energy"
-	| "finish"
-	| "date";
+type SortKey = "priority" | "unitName" | "type" | "days" | "energy" | "finish";
 type SortDir = "asc" | "desc";
 
 interface GoalsTableRow {
@@ -139,11 +132,6 @@ export function GoalsTable({
 					const aFinish = a.estimate?.finishByDay ?? 0;
 					const bFinish = b.estimate?.finishByDay ?? 0;
 					return (aFinish - bFinish) * dir;
-				}
-				case "date": {
-					const aDate = a.estimate?.daysTotal ?? 0;
-					const bDate = b.estimate?.daysTotal ?? 0;
-					return (aDate - bDate) * dir;
 				}
 				default:
 					return 0;
