@@ -60,7 +60,7 @@ function CampaignsPage() {
 			group.entries.push({
 				campaign,
 				type: m.displayType,
-				unlocked,
+				unlocked: Math.min(unlocked, m.totalNodes),
 				total: m.totalNodes,
 			});
 		}
